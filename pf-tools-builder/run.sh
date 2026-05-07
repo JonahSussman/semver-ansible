@@ -23,8 +23,15 @@ FIX_BIN="$BIN_DIR/fix-engine-cli"
 KANTRA_BIN="$KANTRA_DIR/kantra"
 TOKEN_MAPPINGS="$SCRIPT_DIR/patternfly-token-mappings.yaml"
 PROMPT_FILE="$SCRIPT_DIR/prompt.md"
+GOOSEHINTS_SRC="$HOME/.config/goose/.goosehints"
 LOGS_DIR="${LOGS_DIR:-$SCRIPT_DIR/logs/$(date -u +%Y%m%dT%H%M%S)}"
 PROVIDER_PORT=9002
+
+# ── MemPalace init ──────────────────────────────────────────────────────
+if [ ! -f /root/.mempalace/mempalace.yaml ]; then
+    mkdir -p /root/.mempalace
+    mempalace init /root/.mempalace --yes --no-llm 2>/dev/null || true
+fi
 
 # ── Defaults ─────────────────────────────────────────────────────────────
 MODE=""
@@ -119,7 +126,7 @@ CHILD_PIDS=""
 
 cleanup() {
     local exit_code=$?
-    # Kill any tracked child processes
+    rm -f "${MIGRATE_PATH:+$MIGRATE_PATH/.goosehints}"
     for pid in $PROVIDER_PID $CHILD_PIDS; do
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null || true
@@ -382,13 +389,6 @@ run_agent() {
 check_migration_prerequisites() {
     local errors=()
 
-    if ! command -v java >/dev/null 2>&1; then
-        errors+=("java not found. Install a JDK (e.g., brew install openjdk / dnf install java-21-openjdk-devel)")
-    fi
-    if [[ -z "${JAVA_HOME:-}" ]]; then
-        errors+=("JAVA_HOME is not set. Set it to your JDK installation path (e.g., export JAVA_HOME=\$(/usr/libexec/java_home))")
-    fi
-
     case "$AGENT" in
         goose)
             if ! command -v goose >/dev/null 2>&1; then
@@ -478,7 +478,6 @@ run_migration() {
         export KANTRA_DIR="$KANTRA_DIR"
         run_timed "Kantra analysis" "$LOGS_DIR/kantra.log" \
             "$KANTRA_BIN" analyze \
-            --provider java \
             --input "$MIGRATE_PATH" \
             --output "$TEMP_DIR/kantra" \
             --rules "$kantra_rules_dir" \
@@ -505,24 +504,30 @@ run_migration() {
         run_timed "Pattern-based fixes" "$LOGS_DIR/fix-pattern.log" \
             unbuffer "$FIX_BIN" fix "$MIGRATE_PATH" \
             --strategies "$strategies_file" \
-            --input "$kantra_json"  || {
+            --input "$kantra_json" \
+            --log-dir "$LOGS_DIR/fix-debug" || {
                 die "Pattern-based fix failed. Check $LOGS_DIR/fix-pattern.log"
             }
 
-        # Step 7
-        # TODO: add --llm-timeout "$LLM_TIMEOUT" when supported (PR pending)
+        # Copy goosehints to application directory for goose sessions
+        if [[ -f "$GOOSEHINTS_SRC" ]]; then
+            cp "$GOOSEHINTS_SRC" "$MIGRATE_PATH/.goosehints"
+        fi
+
         step "7/$total" "Applying LLM-based fixes"
         run_timed "LLM-based fixes" "$LOGS_DIR/fix-llm.log" \
             unbuffer "$FIX_BIN" fix "$MIGRATE_PATH" \
             --input "$kantra_json" \
             --llm-provider goose \
-            --strategies "$strategies_file" || {
+            --strategies "$strategies_file" \
+            --goose-timeout "$LLM_TIMEOUT" \
+            --log-dir "$LOGS_DIR/fix-debug" || {
                 warn "LLM-based fix returned non-zero (some fixes may have failed). Check $LOGS_DIR/fix-llm.log"
             }
 
         # Commit automated fixes
         (cd "$MIGRATE_PATH" && \
-            git add -A && \
+            git add -A && git reset HEAD -- .goosehints progress.md 2>/dev/null; \
             git diff --cached --quiet || \
             git commit -m "Apply automated migration fixes (pattern-based + LLM)") \
             > /dev/null 2>&1 || true
@@ -544,7 +549,7 @@ run_migration() {
 
         # Commit AI agent fixes
         (cd "$MIGRATE_PATH" && \
-            git add -A && \
+            git add -A && git reset HEAD -- .goosehints progress.md 2>/dev/null; \
             git diff --cached --quiet || \
             git commit -m "Apply AI agent fixes ($AGENT)") \
             > /dev/null 2>&1 || true
@@ -767,7 +772,6 @@ check_archive_integrity() {
     for f in "$SEMVER_BIN" "$FAP_BIN" "$FIX_BIN" "$KANTRA_BIN"; do
         [[ -f "$f" ]] || missing+=("$f")
     done
-    [[ -f "$KANTRA_DIR/java-external-provider" ]] || missing+=("$KANTRA_DIR/java-external-provider")
     [[ -f "$TOKEN_MAPPINGS" ]] || missing+=("$TOKEN_MAPPINGS")
     [[ -f "$PROMPT_FILE" ]] || missing+=("$PROMPT_FILE")
     [[ -d "$RULES_DIR" ]] || missing+=("$RULES_DIR/")

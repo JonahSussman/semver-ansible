@@ -3,8 +3,7 @@ FROM registry.access.redhat.com/ubi9/go-toolset AS go-builder
 
 ARG KANTRA_VERSION=v0.9.2-rc.1
 ARG KANTRA_REPO=https://github.com/konveyor/kantra.git
-ARG ANALYZER_LSP_REPO=https://github.com/konveyor/analyzer-lsp.git
-
+ARG KANTRA_BRANCH=main
 USER root
 RUN dnf install -y unzip && dnf clean all
 
@@ -15,18 +14,13 @@ RUN curl -fSL -o /tmp/kantra.zip \
     && rm /tmp/kantra.zip
 
 # Build kantra binary from source (replaces release binary)
-RUN git clone --depth 1 "$KANTRA_REPO" /src/kantra
+RUN git clone --depth 1 --branch "$KANTRA_BRANCH" "$KANTRA_REPO" /src/kantra
 WORKDIR /src/kantra
 RUN CGO_ENABLED=0 go build -o /kantra-assets/kantra main.go
 
-# Build java-external-provider
-RUN git clone --depth 1 "$ANALYZER_LSP_REPO" /src/analyzer-lsp
-WORKDIR /src/analyzer-lsp/external-providers/java-external-provider
-RUN CGO_ENABLED=0 go build -o /kantra-assets/java-external-provider main.go
-
-# Trim kantra assets — remove Java-only files and empty out the huge maven-index.txt
+# Trim kantra assets — remove Java-only files
 RUN : > /kantra-assets/maven-index.txt \
-    && rm -rf /kantra-assets/rulesets \
+    && rm -rf /kantra-assets/rulesets /kantra-assets/jdtls /kantra-assets/fernflower.jar \
     && mkdir -p /kantra-assets/rulesets
 
 
@@ -34,9 +28,13 @@ RUN : > /kantra-assets/maven-index.txt \
 FROM registry.access.redhat.com/ubi9/ubi AS rust-builder
 
 ARG SEMVER_REPO=https://github.com/konveyor-ecosystem/semver-analyzer.git
+ARG SEMVER_BRANCH=main
 ARG KONVEYOR_CORE_REPO=https://github.com/konveyor-ecosystem/konveyor-core.git
+ARG KONVEYOR_CORE_BRANCH=main
 ARG FAP_REPO=https://github.com/konveyor-ecosystem/frontend-analyzer-provider.git
+ARG FAP_BRANCH=main
 ARG FIX_ENGINE_REPO=https://github.com/konveyor-ecosystem/fix-engine.git
+ARG FIX_ENGINE_BRANCH=main
 
 RUN dnf install -y gcc gcc-c++ make openssl-devel pkg-config git && dnf clean all
 
@@ -46,10 +44,10 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Clone repos (konveyor-core must be sibling to semver-analyzer)
 WORKDIR /src
-RUN git clone "$KONVEYOR_CORE_REPO" \
-    && git clone "$SEMVER_REPO" \
-    && git clone "$FAP_REPO" \
-    && git clone "$FIX_ENGINE_REPO"
+RUN git clone --branch "$KONVEYOR_CORE_BRANCH" "$KONVEYOR_CORE_REPO" \
+    && git clone --branch "$SEMVER_BRANCH" "$SEMVER_REPO" \
+    && git clone --branch "$FAP_BRANCH" "$FAP_REPO" \
+    && git clone --branch "$FIX_ENGINE_BRANCH" "$FIX_ENGINE_REPO"
 
 # Build semver-analyzer
 WORKDIR /src/semver-analyzer
@@ -136,10 +134,11 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal
 # System dependencies
 RUN microdnf install -y --nodocs \
     bash \
-    java-21-openjdk-devel \
-    maven \
     python3 \
     python3-pyyaml \
+    python3.11 \
+    python3.11-pip \
+    python3.11-setuptools \
     git \
     which \
     procps-ng \
@@ -148,13 +147,32 @@ RUN microdnf install -y --nodocs \
     tar \
     libgomp \
     expect \
+    gcc \
+    make \
+    && curl -fsSL https://www.sqlite.org/2024/sqlite-autoconf-3450300.tar.gz \
+        | tar xz -C /tmp \
+    && cd /tmp/sqlite-autoconf-3450300 \
+    && ./configure --prefix=/usr/local && make -j$(nproc) && make install \
+    && echo /usr/local/lib > /etc/ld.so.conf.d/sqlite3.conf && ldconfig \
+    && rm -rf /tmp/sqlite-autoconf-3450300 \
+    && microdnf remove -y gcc make \
     && microdnf clean all
+
+# Python 3.11 symlinks (mempalace requires 3.9+, chromadb needs newer sqlite)
+RUN ln -sf /usr/bin/python3.11 /usr/local/bin/python3.11 \
+    && ln -sf /usr/bin/pip3.11 /usr/local/bin/pip3.11
+
+# MemPalace
+RUN pip3.11 install --no-cache-dir --no-warn-script-location mempalace
 
 # Node.js 20 (pf-codemods requires >=18, UBI9 microdnf only has v16)
 RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - \
     && microdnf install -y --nodocs nodejs \
     && microdnf clean all \
     && corepack enable
+
+# Point system python to 3.11
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python3
 
 # yq
 ARG TARGETARCH=amd64
@@ -168,9 +186,8 @@ RUN curl -fsSL \
 ENV CONFIGURE=
 
 # Environment
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 ENV KANTRA_DIR=/opt/patternfly-tools/.kantra
-ENV PATH="${JAVA_HOME}/bin:/root/.local/bin:${PATH}"
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Git config for auto-commit step
 RUN git config --system safe.directory '*' \
@@ -198,14 +215,12 @@ COPY --from=rust-builder /src/frontend-analyzer-provider/rules/patternfly-v5-to-
 # Default goose config (can be overridden by mounting ~/.config/goose)
 RUN mkdir -p /root/.config/goose
 COPY goose-config.yaml /root/.config/goose/config.yaml
-
-# Pre-initialize goose sessions DB to avoid SQLite race condition with concurrent fixes
-RUN mkdir -p /root/.local/share/goose/sessions && \
-    goose info > /dev/null 2>&1 || true
+COPY goosehints-mempalace /root/.config/goose/.goosehints
+RUN chmod 444 /root/.config/goose/config.yaml
 
 # run.sh and prompt
 COPY run.sh eval.sh prompt.md eval_prompt.md* ./
-RUN chmod +x run.sh eval.sh bin/* .kantra/kantra .kantra/java-external-provider
+RUN chmod +x run.sh eval.sh bin/* .kantra/kantra
 
 VOLUME ["/workspace"]
 

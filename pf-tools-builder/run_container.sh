@@ -189,6 +189,9 @@ if [[ -d "$GCP_CREDS_DIR" ]]; then
     ENV_ARGS+=(-e "GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json")
 fi
 
+# MemPalace persistence volume
+MOUNT_ARGS+=(-v "mempalace-data:/root/.mempalace:z")
+
 # ── Paths inside container ────────────────────────────────────────────────
 CONTAINER_LOGS="/opt/patternfly-tools/logs"
 LOGS_DEST="$PWD/.pf-migration-logs"

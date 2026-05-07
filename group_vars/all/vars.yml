@@ -70,9 +70,9 @@ repos_dir: "{{ base_dir }}/repos"
 # Repo URLs (only used when run_mode=vm, by clone_repos role)
 patternfly_react_repo: "https://github.com/patternfly/patternfly-react.git"
 patternfly_repo: "https://github.com/patternfly/patternfly.git"
-konveyor_core_repo: "https://github.com/shawn-hurley/konveyor-core.git"
-semver_analyzer_repo: "https://github.com/shawn-hurley/semver-analyzer.git"
-frontend_provider_repo: "https://github.com/shawn-hurley/frontend-analyzer-provider.git"
+konveyor_core_repo: "https://github.com/konveyor-ecosystem/konveyor-core.git"
+semver_analyzer_repo: "https://github.com/konveyor-ecosystem/semver-analyzer.git"
+frontend_provider_repo: "https://github.com/konveyor-ecosystem/frontend-analyzer-provider.git"
 
 # System packages to layer via rpm-ostree (VM only)
 system_packages:

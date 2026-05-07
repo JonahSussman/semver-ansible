@@ -329,9 +329,9 @@ Prompts for target platform and kantra release. All repo URLs/branches are overr
 |------|---------|
 | [konveyor/kantra](https://github.com/konveyor/kantra) | Static analysis CLI |
 | [konveyor/analyzer-lsp](https://github.com/konveyor/analyzer-lsp) | java-external-provider |
-| [shawn-hurley/semver-analyzer](https://github.com/shawn-hurley/semver-analyzer) | Breaking change detection |
-| [shawn-hurley/konveyor-core](https://github.com/shawn-hurley/konveyor-core) | Shared Konveyor types |
-| [shawn-hurley/frontend-analyzer-provider](https://github.com/shawn-hurley/frontend-analyzer-provider) | Frontend analysis provider |
-| [shawn-hurley/fix-engine](https://github.com/shawn-hurley/fix-engine) | Fix engine CLI |
+| [konveyor-ecosystem/semver-analyzer](https://github.com/konveyor-ecosystem/semver-analyzer) | Breaking change detection |
+| [konveyor-ecosystem/konveyor-core](https://github.com/konveyor-ecosystem/konveyor-core) | Shared Konveyor types |
+| [konveyor-ecosystem/frontend-analyzer-provider](https://github.com/konveyor-ecosystem/frontend-analyzer-provider) | Frontend analysis provider |
+| [konveyor-ecosystem/fix-engine](https://github.com/konveyor-ecosystem/fix-engine) | Fix engine CLI |
 | [patternfly/patternfly-react](https://github.com/patternfly/patternfly-react) | PatternFly React (analyzed) |
 | [patternfly/patternfly](https://github.com/patternfly/patternfly) | PatternFly CSS (analyzed) |
