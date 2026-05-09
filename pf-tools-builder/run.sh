@@ -28,7 +28,13 @@ LOGS_DIR="${LOGS_DIR:-$SCRIPT_DIR/logs/$(date -u +%Y%m%dT%H%M%S)}"
 PROVIDER_PORT=9002
 
 # ── MemPalace init ──────────────────────────────────────────────────────
-if [ ! -f /root/.mempalace/mempalace.yaml ]; then
+if [[ "${DISABLE_MEMORY:-}" == "1" ]]; then
+    if [[ -f /root/.config/goose/config.yaml ]]; then
+        chmod 644 /root/.config/goose/config.yaml
+        yq -i '.extensions.mempalace.enabled = false' /root/.config/goose/config.yaml 2>/dev/null || true
+        chmod 444 /root/.config/goose/config.yaml
+    fi
+elif [ ! -f /root/.mempalace/mempalace.yaml ]; then
     mkdir -p /root/.mempalace
     mempalace init /root/.mempalace --yes --no-llm 2>/dev/null || true
 fi
@@ -510,7 +516,7 @@ run_migration() {
             }
 
         # Copy goosehints to application directory for goose sessions
-        if [[ -f "$GOOSEHINTS_SRC" ]]; then
+        if [[ "${DISABLE_MEMORY:-}" != "1" ]] && [[ -f "$GOOSEHINTS_SRC" ]]; then
             cp "$GOOSEHINTS_SRC" "$MIGRATE_PATH/.goosehints"
         fi
 
