@@ -515,11 +515,6 @@ run_migration() {
                 die "Pattern-based fix failed. Check $LOGS_DIR/fix-pattern.log"
             }
 
-        # Copy goosehints to application directory for goose sessions
-        if [[ "${DISABLE_MEMORY:-}" != "1" ]] && [[ -f "$GOOSEHINTS_SRC" ]]; then
-            cp "$GOOSEHINTS_SRC" "$MIGRATE_PATH/.goosehints"
-        fi
-
         step "7/$total" "Applying LLM-based fixes"
         run_timed "LLM-based fixes" "$LOGS_DIR/fix-llm.log" \
             unbuffer "$FIX_BIN" fix "$MIGRATE_PATH" \
@@ -551,6 +546,9 @@ run_migration() {
         info "Skipping AI agent (--skip-agent)"
     elif confirm_step "Phase 2: Run AI agent ($AGENT) for remaining fixes?"; then
         step "8/$total" "Running $AGENT for remaining fixes"
+        if [[ "${DISABLE_MEMORY:-}" != "1" ]] && [[ -f "$GOOSEHINTS_SRC" ]]; then
+            cp "$GOOSEHINTS_SRC" "$MIGRATE_PATH/.goosehints"
+        fi
         run_agent "$MIGRATE_PATH"
 
         # Commit AI agent fixes

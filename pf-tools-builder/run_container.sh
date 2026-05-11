@@ -96,6 +96,7 @@ Container options:
   --image <NAME>             Container image (default: quay.io/pranavgaikwad/patternfly-tools:latest)
   --keep                     Keep container after completion (for debugging)
   --no-memory                Disable memory extension and skip memory volume mount
+  --log-dir <PATH>           Directory to sync logs to (default: $PWD/.pf-migration-logs)
 
 Evaluation options:
   --enable-eval              Run evaluation after migration
@@ -132,6 +133,7 @@ while [[ $# -gt 0 ]]; do
         --enable-eval)    ENABLE_EVAL=true; shift ;;
         --keep)           KEEP_CONTAINER=true; shift ;;
         --no-memory)      NO_MEMORY=true; shift ;;
+        --log-dir)        LOGS_DEST="$2"; shift 2 ;;
         --eval-only)      ENABLE_EVAL=true; EVAL_ONLY_BRANCH="$2"; shift 2 ;;
         --base-branch)    BASE_BRANCH="$2"; PASSTHROUGH_ARGS+=("--base-branch" "$2"); shift 2 ;;
         --agent)          AGENT="$2"; PASSTHROUGH_ARGS+=("--agent" "$2"); shift 2 ;;
@@ -203,7 +205,7 @@ fi
 
 # ── Paths inside container ────────────────────────────────────────────────
 CONTAINER_LOGS="/opt/patternfly-tools/logs"
-LOGS_DEST="$PWD/.pf-migration-logs"
+LOGS_DEST="${LOGS_DEST:-$PWD/.pf-migration-logs}"
 
 # ── Mode: Mount ──────────────────────────────────────────────────────────
 run_mount_mode() {
