@@ -77,6 +77,7 @@ EVAL_ONLY_BRANCH=""
 BASE_BRANCH="main"
 AGENT="goose"
 KEEP_CONTAINER=false
+NO_MEMORY=false
 PASSTHROUGH_ARGS=()
 
 # ── Usage ────────────────────────────────────────────────────────────────
@@ -94,6 +95,8 @@ Container options:
   --goose-config <PATH>      Override goose config directory
   --image <NAME>             Container image (default: quay.io/pranavgaikwad/patternfly-tools:latest)
   --keep                     Keep container after completion (for debugging)
+  --no-memory                Disable memory extension and skip memory volume mount
+  --log-dir <PATH>           Directory to sync logs to (default: $PWD/.pf-migration-logs)
 
 Evaluation options:
   --enable-eval              Run evaluation after migration
@@ -129,6 +132,8 @@ while [[ $# -gt 0 ]]; do
         --image)          IMAGE="$2"; shift 2 ;;
         --enable-eval)    ENABLE_EVAL=true; shift ;;
         --keep)           KEEP_CONTAINER=true; shift ;;
+        --no-memory)      NO_MEMORY=true; shift ;;
+        --log-dir)        LOGS_DEST="$2"; shift 2 ;;
         --eval-only)      ENABLE_EVAL=true; EVAL_ONLY_BRANCH="$2"; shift 2 ;;
         --base-branch)    BASE_BRANCH="$2"; PASSTHROUGH_ARGS+=("--base-branch" "$2"); shift 2 ;;
         --agent)          AGENT="$2"; PASSTHROUGH_ARGS+=("--agent" "$2"); shift 2 ;;
@@ -189,9 +194,18 @@ if [[ -d "$GCP_CREDS_DIR" ]]; then
     ENV_ARGS+=(-e "GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json")
 fi
 
+# MemPalace persistence volume
+if [[ "$NO_MEMORY" == true ]]; then
+    ENV_ARGS+=(-e "DISABLE_MEMORY=1")
+    info "Memory: disabled"
+else
+    MOUNT_ARGS+=(-v "mempalace-data:/root/.mempalace:z")
+    info "Memory: enabled (mempalace-data volume)"
+fi
+
 # ── Paths inside container ────────────────────────────────────────────────
 CONTAINER_LOGS="/opt/patternfly-tools/logs"
-LOGS_DEST="$PWD/.pf-migration-logs"
+LOGS_DEST="${LOGS_DEST:-$PWD/.pf-migration-logs}"
 
 # ── Mode: Mount ──────────────────────────────────────────────────────────
 run_mount_mode() {

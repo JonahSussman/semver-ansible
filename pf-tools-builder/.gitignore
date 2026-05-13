@@ -1,3 +1,4 @@
 .pf-migration-logs/
 *.zip
+experiments/
 patternfly-tools/
