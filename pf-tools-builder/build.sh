@@ -33,19 +33,19 @@ platform_lookup() {
 
 # ── Repo defaults ────────────────────────────────────────────────────────
 KANTRA_REPO_URL="https://github.com/konveyor/kantra.git"
-KANTRA_REPO_BRANCH=""
+KANTRA_REPO_BRANCH="${KANTRA_REPO_BRANCH:-}"
 SEMVER_REPO_URL="https://github.com/konveyor-ecosystem/semver-analyzer.git"
-SEMVER_REPO_BRANCH=""
+SEMVER_REPO_BRANCH="${SEMVER_REPO_BRANCH:-}"
 KONVEYOR_CORE_REPO_URL="https://github.com/konveyor-ecosystem/konveyor-core.git"
-KONVEYOR_CORE_REPO_BRANCH=""
+KONVEYOR_CORE_REPO_BRANCH="${KONVEYOR_CORE_REPO_BRANCH:-}"
 FAP_REPO_URL="https://github.com/konveyor-ecosystem/frontend-analyzer-provider.git"
-FAP_REPO_BRANCH=""
+FAP_REPO_BRANCH="${FAP_REPO_BRANCH:-}"
 FIX_ENGINE_REPO_URL="https://github.com/konveyor-ecosystem/fix-engine.git"
-FIX_ENGINE_REPO_BRANCH=""
+FIX_ENGINE_REPO_BRANCH="${FIX_ENGINE_REPO_BRANCH:-}"
 ANALYZER_LSP_REPO_URL="https://github.com/konveyor/analyzer-lsp.git"
-ANALYZER_LSP_REPO_BRANCH=""
+ANALYZER_LSP_REPO_BRANCH="${ANALYZER_LSP_REPO_BRANCH:-}"
 PF_REACT_REPO_URL="https://github.com/patternfly/patternfly-react.git"
-PF_REACT_FROM="${PF_REACT_FROM:-v5.4.0}"
+PF_REACT_FROM="${PF_REACT_FROM:-v5.3.3}"
 PF_REACT_TO="${PF_REACT_TO:-v6.4.1}"
 PF_REPO_URL="https://github.com/patternfly/patternfly.git"
 PF_DEP_FROM="${PF_DEP_FROM:-v5.4.0}"
@@ -56,8 +56,8 @@ TOKEN_MAPPINGS_URL="https://raw.githubusercontent.com/konveyor-ecosystem/semver-
 TOPOLOGY_REPO_URL="https://github.com/patternfly/react-topology.git"
 TOPOLOGY_FROM="${TOPOLOGY_FROM:-v5.4.1}"
 TOPOLOGY_TO="${TOPOLOGY_TO:-v6.4.0}"
-TOPOLOGY_INSTALL_CMD='npx yarn@1 install --frozen-lockfile --ignore-scripts --network-concurrency 1'
-TOPOLOGY_BUILD_CMD='npx yarn@1 build'
+TOPOLOGY_INSTALL_CMD='npm install --ignore-scripts --legacy-peer-deps'
+TOPOLOGY_BUILD_CMD='cd packages/module && npm run build'
 
 # PatternFly React Component Groups
 RCG_REPO_URL="https://github.com/patternfly/react-component-groups.git"
@@ -144,6 +144,9 @@ run_analyze_and_rules() {
     local name="$1" report_path="$2" ruleset_name="$3"; shift 3
     local analyze_log="$BUILD_TMP/analyze-${name}.log"
     local rules_log="$BUILD_TMP/rules-${name}.log"
+    local output_dir="$BUILD_DIR/rules/${name}/semver_rules"
+
+    mkdir -p "$output_dir"
 
     info "Running semver-analyzer analyze for $name..."
     "$HOST_SEMVER_BIN" analyze typescript \
@@ -162,7 +165,7 @@ run_analyze_and_rules() {
 
     "$HOST_SEMVER_BIN" konveyor typescript \
         --from-report "$report_path" \
-        --output-dir "$BUILD_DIR/rules/semver_rules" \
+        --output-dir "$output_dir" \
         --ruleset-name "$ruleset_name" \
         --pipeline-v2 \
         --log-file "$rules_log" --log-level info \
@@ -174,12 +177,12 @@ run_analyze_and_rules() {
     KONVEYOR_PKG_VERSION=""
 
     local rule_count=0
-    for rf in "$BUILD_DIR/rules/semver_rules"/*.yaml; do
+    for rf in "$output_dir"/*.yaml; do
         if [[ -f "$rf" ]]; then
-            rule_count=$((rule_count + $(grep -c 'ruleID:' "$rf" 2>/dev/null || echo 0)))
+            rule_count=$((rule_count + $(grep -c 'ruleID:' "$rf" 2>/dev/null | tr -d '[:space:]' || echo 0)))
         fi
     done
-    info "$name: rules generated (total so far: $rule_count)"
+    info "$name: $rule_count rules generated"
 }
 
 prompt_select() {
@@ -544,7 +547,6 @@ generate_pf_rules() {
         || die "Failed to clone patternfly. Check $clone_log"
 
     info "patternfly-react: $PF_REACT_FROM -> $PF_REACT_TO"
-    mkdir -p "$BUILD_DIR/rules/semver_rules"
 
     KONVEYOR_RENAME_PATTERNS="" KONVEYOR_PKG_NAME_MAP="" KONVEYOR_PKG_VERSION=""
     [[ -f "$BUILD_DIR/patternfly-token-mappings.yaml" ]] && KONVEYOR_RENAME_PATTERNS="$BUILD_DIR/patternfly-token-mappings.yaml"
@@ -670,7 +672,7 @@ generate_react_rules() {
 
     local react_install_cmd="export ELECTRON_SKIP_BINARY_DOWNLOAD=1 && export NVM_DIR=\"\$HOME/.nvm\" && . \"\$NVM_DIR/nvm.sh\" && nvm exec 18 npx yarn@1 install --ignore-optional --ignore-scripts"
 
-    run_analyze_and_rules "react" "$BUILD_TMP/react-report.json" "react-breaking-changes" \
+    (run_analyze_and_rules "react" "$BUILD_TMP/react-report.json" "react-breaking-changes" \
         --repo "$repo_src" \
         --from "$REACT_FROM" --to "$REACT_TO" \
         --from-node-version 14 \
@@ -678,7 +680,8 @@ generate_react_rules() {
         --from-install-command "$react_install_cmd" \
         --to-install-command "$react_install_cmd" \
         --from-build-command "$REACT_BUILD_CMD" \
-        --to-build-command "$REACT_BUILD_CMD"
+        --to-build-command "$REACT_BUILD_CMD") \
+        || warn "React rule generation failed (Node 14 may not be available on this platform)"
 }
 
 generate_react_types_rules() {
@@ -720,13 +723,14 @@ generate_react_types_rules() {
 
     info "react-types: $REACT_TYPES_FROM -> $REACT_TYPES_TO"
     KONVEYOR_RENAME_PATTERNS="" KONVEYOR_PKG_NAME_MAP="" KONVEYOR_PKG_VERSION=""
-    run_analyze_and_rules "react-types" "$BUILD_TMP/react-types-report.json" "react-types-breaking-changes" \
+    (run_analyze_and_rules "react-types" "$BUILD_TMP/react-types-report.json" "react-types-breaking-changes" \
         --repo "$repo_src" \
         --from "$REACT_TYPES_FROM" --to "$REACT_TYPES_TO" \
         --from-install-command "true" \
         --to-install-command "true" \
         --from-build-command "true" \
-        --to-build-command "true"
+        --to-build-command "true") \
+        || warn "React Types rule generation failed"
 }
 
 # ── Extras ───────────────────────────────────────────────────────────────
