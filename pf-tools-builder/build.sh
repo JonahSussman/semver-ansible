@@ -152,7 +152,6 @@ run_analyze_and_rules() {
     "$HOST_SEMVER_BIN" analyze typescript \
         "$@" \
         --no-llm \
-        --pipeline-v2 \
         --log-file "$analyze_log" --log-level info \
         -o "$report_path" \
         > "$analyze_log.stdout" 2>&1 || die "analyze failed for $name. Check $analyze_log"
@@ -167,7 +166,6 @@ run_analyze_and_rules() {
         --from-report "$report_path" \
         --output-dir "$output_dir" \
         --ruleset-name "$ruleset_name" \
-        --pipeline-v2 \
         --log-file "$rules_log" --log-level info \
         "${extra_konveyor_args[@]}" \
         > "$rules_log.stdout" 2>&1 || die "konveyor failed for $name. Check $rules_log"
